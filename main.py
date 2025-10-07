@@ -1,16 +1,11 @@
 from fastapi import FastAPI, Request
-from okx_client import place_order
+from okx_client import place_order, close_position
 
 app = FastAPI()
 
 symbol_map = {
     "BTCUSD": "BTC-USDT",
-    "ETHUSD": "ETH-USDT",
-    "XAUUSD": "XAU-USDT-SWAP",
-    "NAS100": "US100-USDT-SWAP",
-    "SPX500": "SP500-USDT-SWAP",
 }
-
 
 @app.post("/signal")
 async def receive_signal(request: Request):
@@ -25,18 +20,33 @@ async def receive_signal(request: Request):
         print(f"❌ Error al decodificar JSON: {e}")
         return {"status": "error", "message": str(e)}
 
-    # Datos clave
     symbol_raw = data.get("symbol", "BTCUSD").replace("/", "").upper()
     inst_id = symbol_map.get(symbol_raw, symbol_raw)
-    side = data.get("type", "BUY").lower()
-    volume = data.get("volume", 0.01)
+    signal_type = data.get("type", "BUY").upper()
+    volume = float(data.get("volume", 0.01))
     price = data.get("price", None)
 
-    # Debug
     print(f"📘 Símbolo recibido: {symbol_raw} → usado en OKX: {inst_id}")
 
-    # Enviar orden
-    response = place_order(inst_id, side, volume, price)
+    try:
+        if signal_type in ["BUY", "SELL"]:
+            response = place_order(inst_id, signal_type.lower(), volume, price)
+        
+        elif signal_type == "CLOSE":
+            print(f"🔵 Señal de cierre recibida para {inst_id}")
+            response_buy = close_position(inst_id, "buy", volume)
+            response_sell = close_position(inst_id, "sell", volume)
+            response = {
+                "buy_close": response_buy,
+                "sell_close": response_sell
+            }
+        else:
+            return {"status": "ignored", "reason": f"Tipo de señal no reconocido: {signal_type}"}
 
-    print(f"✅ Orden enviada a OKX: {response}")
-    return {"status": "ok", "exchange_response": response}
+        print(f"✅ Orden enviada a OKX: {response}")
+        return {"status": "ok", "exchange_response": response}
+
+    except Exception as e:
+        print(f"❌ Error procesando señal: {e}")
+        import traceback; traceback.print_exc()
+        return {"status": "error", "message": str(e)}

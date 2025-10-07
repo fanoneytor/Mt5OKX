@@ -9,7 +9,6 @@ PASSPHRASE = os.getenv("OKX_PASSPHRASE")
 BASE_URL = os.getenv("OKX_BASE_URL", "https://www.okx.com")
 SIMULATED = os.getenv("OKX_SIMULATED", "0") == "1"
 
-
 def _timestamp():
     return time.strftime('%Y-%m-%dT%H:%M:%S.000Z', time.gmtime())
 
@@ -36,25 +35,37 @@ def _headers(method, path, body=""):
 
 
 def place_order(inst_id, side, size, price=None, order_type="market"):
-    """Ejecuta una orden en OKX."""
+    """Ejecuta una orden en OKX (en cuenta demo o real)."""
     endpoint = "/api/v5/trade/order"
     url = BASE_URL + endpoint
+
+    side = side.lower()
+    if side not in ["buy", "sell"]:
+        raise ValueError(f"Lado inválido: {side}. Debe ser 'buy' o 'sell'.")
+
+    min_size = 0.001
+    if float(size) < min_size:
+        print(f"⚠️ Volumen {size} ajustado al mínimo permitido {min_size}")
+        size = min_size
 
     body = {
         "instId": inst_id,
         "tdMode": "cash",
-        "side": side.lower(),  # buy / sell
-        "ordType": order_type,  # market / limit
+        "side": side,
+        "ordType": order_type,
         "sz": str(size),
     }
 
     if order_type == "limit" and price:
         body["px"] = str(price)
 
-    # JSON real (no usar str.replace)
     body_json = json.dumps(body)
-
     headers = _headers("POST", endpoint, body_json)
 
     response = requests.post(url, headers=headers, data=body_json)
     return response.json()
+
+def close_position(inst_id, side, size):
+    """Cierra una posición abierta ejecutando la orden contraria."""
+    opposite = "sell" if side.lower() == "buy" else "buy"
+    return place_order(inst_id, opposite, size)
